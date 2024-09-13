@@ -1,6 +1,19 @@
-import json
+# Python Lib
+import os
+
+# Extended Libs
+import numpy as np
 import pandas as pd
-from roaring_landmask import RoaringLandmask
+import json
+
+# Plotting Libs
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Choose file:
+import tkinter as tk
+
+import pandas as pd
 
 class DataProcessor:
     def __init__(self, base_path):
@@ -8,9 +21,7 @@ class DataProcessor:
         self.dfs_ais = {}
         self.dfs_sar = {}
         self.dfs_norsat = {}
-        
-        self.landmask = RoaringLandmask.new()
-        
+
     # Method to load and format AIS data
     def load_ais_data(self, ais_files):
         self.dfs_ais = {date: pd.read_csv(f"{self.base_path}{file}") for date, file in ais_files.items()}
@@ -34,68 +45,20 @@ class DataProcessor:
             df['source'] = 'norsat'
             self.dfs_norsat[date] = self.norsat_formatting(df)
 
-    ############ Norsat FILTERS ############
     # Integrated method to format Norsat data
     def norsat_formatting(self, df):
+        # Use .get() to handle cases where 'latitude' or 'longitude' might be missing
         df['latitude'] = df['NRDEmitterPosition'].apply(lambda x: x.get('Latitude') if isinstance(x, dict) else None)
         df['longitude'] = df['NRDEmitterPosition'].apply(lambda x: x.get('Longitude') if isinstance(x, dict) else None)
         return df
-    
-    ############ SAR FILTERS ############
+
     # Method to expand SAR objects for a given date
-    def expand_objects_for_date(self, date_key: str) -> pd.DataFrame:
-        """
-        Expands the objects from a specific date in the dfs_sar dictionary into a DataFrame.
+    def expand_objects_for_date(self, dfs_sar, date_key):
+        sar_df = dfs_sar[date_key]
+        # Assuming the SAR expansion logic goes here
+        expanded_sar_df = sar_df.copy()  # Example logic, adjust according to actual expansion needs
+        return expanded_sar_df
 
-        Parameters:
-        - date_key: The specific date (key) in the format 'DD-MM-YYYY' for which to expand the objects.
-
-        Returns:
-        - A DataFrame with the expanded objects for the specified date.
-        """
-        if date_key not in self.dfs_sar:
-            raise ValueError(f"Date {date_key} not found in dfs_sar.")
-
-        df = self.dfs_sar[date_key]
-        expanded_data = []
-
-        for _, row in df.iterrows():
-            start_time = row['Start']
-            end_time = row['End']
-            objects = row['Objects']
-
-            # Convert the JSON objects to a dict if stored as a string
-            if isinstance(objects, str):
-                objects = json.loads(objects)
-
-            # Expand each object in the 'Objects' field
-            for obj_id, obj_data in objects.items():
-                expanded_row = {
-                    'Start': start_time,
-                    'End': end_time,
-                    'Object_ID': obj_id,
-                    'x': obj_data['x'],
-                    'y': obj_data['y'],
-                    'width': obj_data['width'],
-                    'height': obj_data['height'],
-                    'class': obj_data['class'],
-                    'latitude': obj_data.get('latitude'),
-                    'longitude': obj_data.get('longitude'),
-                    'probabilities': obj_data.get('probabilities'),
-                    'encoded_image': obj_data.get('encoded_image')
-                }
-                expanded_data.append(expanded_row)
-
-        return pd.DataFrame(expanded_data)
-
-    def filter_sar_landmask(self, filtered_sar_df):
-        filtered_sar_df = filtered_sar_df.copy()
-
-        filtered_sar_df.loc[:, 'on_land'] = self.landmask.contains_many(
-            filtered_sar_df['longitude'].to_numpy(), filtered_sar_df['latitude'].to_numpy())
-        return filtered_sar_df
-
-    ############ AIS FILTERS ############
     # Method to filter AIS data based on SAR timestamps
     def filter_ais_data(self, date_key, delta_time):
         ais_df = self.dfs_ais[date_key]
@@ -121,3 +84,52 @@ class DataProcessor:
         print(f"AIS:\n{self.dfs_ais.keys()}\nColumns: {self.dfs_ais['02-11-2022'].columns}")
         print(f"SAR:\n{self.dfs_sar.keys()}\nColumns: {self.dfs_sar['02-11-2022'].columns}")
         print(f"Norsat:\n{self.dfs_norsat.keys()}\nColumns: {self.dfs_norsat['02-11-2022'].columns}")
+
+class sar_data_processing():
+    def __init__(self, dfs_sar : dict) -> None:
+        self.dfs_sar = dfs_sar
+
+    def expand_objects_for_date(self, date_key : str) -> pd.DataFrame:
+        """
+        Expands the objects from a specific date in the dfs_sar dictionary into a DataFrame.
+
+        Parameters:
+        - dfs_sar: Dictionary where keys are dates and values are DataFrames containing objects.
+        - date_key: The specific date (key) in the format 'DD-MM-YYYY' for which to expand the objects.
+
+        Returns:
+        - A DataFrame with the expanded objects for the specified date.
+        """
+        if date_key not in self:
+            raise ValueError(f"Date {date_key} not found in the dictionary.")
+
+        df = self[date_key]
+        expanded_data = []
+
+        for _, row in df.iterrows():
+            start_time = row['Start']
+            start_time = row['End']
+            objects = row['Objects']
+
+            # Convert the JSON objects to a dict
+            if isinstance(objects, str):  # In case JSON is stored as a string
+                objects = json.loads(objects)
+
+            # Expand each object in the 'Objects' field
+            for obj_id, obj_data in objects.items():
+                expanded_row = {
+                    'Start': start_time,
+                    'Object_ID': obj_id,
+                    'x': obj_data['x'],
+                    'y': obj_data['y'],
+                    'width': obj_data['width'],
+                    'height': obj_data['height'],
+                    'class': obj_data['class'],
+                    'latitude': obj_data['latitude'],
+                    'longitude': obj_data['longitude'],
+                    'probabilities': obj_data['probabilities'],
+                    'encoded_image': obj_data['encoded_image']
+                }
+                expanded_data.append(expanded_row)
+
+        return pd.DataFrame(expanded_data)

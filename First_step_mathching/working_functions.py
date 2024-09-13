@@ -8,9 +8,7 @@ class DataProcessor:
         self.dfs_ais = {}
         self.dfs_sar = {}
         self.dfs_norsat = {}
-        
-        self.landmask = RoaringLandmask.new()
-        
+
     # Method to load and format AIS data
     def load_ais_data(self, ais_files):
         self.dfs_ais = {date: pd.read_csv(f"{self.base_path}{file}") for date, file in ais_files.items()}
@@ -91,8 +89,10 @@ class DataProcessor:
     def filter_sar_landmask(self, filtered_sar_df):
         filtered_sar_df = filtered_sar_df.copy()
 
-        filtered_sar_df.loc[:, 'on_land'] = self.landmask.contains_many(
-            filtered_sar_df['longitude'].to_numpy(), filtered_sar_df['latitude'].to_numpy())
+        filtered_sar_df.loc[:, 'on_land'] = RoaringLandmask.new().contains_many(
+            filtered_sar_df['latitude'].to_numpy(), 
+            filtered_sar_df['longitude'].to_numpy()
+        )
         return filtered_sar_df
 
     ############ AIS FILTERS ############
