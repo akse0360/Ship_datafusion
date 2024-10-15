@@ -145,8 +145,14 @@ class AISInterpolation:
             latitude = mmsi_group['latitude'].values
 
             # Choose linear interpolation
-            interpol = interp1d(time_numeric, np.c_[longitude, latitude], axis=0, kind='linear')
-
+            if len(mmsi_group) == 2:
+                interpol = interp1d(time_numeric, np.c_[longitude, latitude], axis=0, kind='linear')
+            # Choose cubic spline interpolation
+            elif len(mmsi_group) > 2:
+                interpol = CubicSpline(time_numeric, np.c_[longitude, latitude], axis=0)
+            else:
+                continue
+            
             # Perform interpolation for the specified interpolation time
             x_interp, y_interp = interpol(interpolation_time_numeric).T
 
@@ -182,5 +188,76 @@ class AISInterpolation:
 
         return interpolated_df, not_enough
     
+    @staticmethod
+    def evaluate_sog_between_points(interpolated_df, max_threshold_sog):
+        """
+        Evaluates the speed over the ground between the interpolated point and the 'before' and 'after' positions.
+        
+        Parameters:
+        - interpolated_df: DataFrame containing interpolated points and their 'before' and 'after' positions.
+        - max_threshold_sog: Maximum allowable speed over the ground (in knots or km/h) as a threshold.
+        
+        Returns:
+        - A DataFrame with the following columns:
+        ['mmsi', 'int_latitude', 'int_longitude', 'TimeStamp_before', 'TimeStamp_after', 
+        'latitude_before', 'longitude_before', 'latitude_after', 'longitude_after', 
+        'sog_before_to_interp', 'sog_after_to_interp', 'exceeds_threshold_before', 'exceeds_threshold_after'].
+        """
+        # Haversine distance function as defined by you
+        def haversine_distance(lat1, lon1, lat2, lon2):
+            """
+            Calculate the Haversine distance between two points in vectorized form using numpy.
+            
+            Args:
+                lat1, lon1, lat2, lon2: Arrays or Series representing latitude and longitude.
+                
+            Returns:
+                Series or array: Haversine distance in kilometers.
+            """
+            R = 6371.0  # Radius of the Earth in kilometers
+
+            # Convert latitude and longitude from degrees to radians
+            lat1, lon1, lat2, lon2 = np.radians(lat1), np.radians(lon1), np.radians(lat2), np.radians(lon2)
+
+            # Compute differences
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            # Haversine formula
+            a = np.sin(dlat / 2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2)**2
+            c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
+            # Distance in kilometers
+            return R * c
+        
+        # Calculate the distance between interpolated point and before/after positions using Haversine distance
+        interpolated_df['distance_before_interp'] = haversine_distance(
+            interpolated_df['int_latitude'], interpolated_df['int_longitude'],
+            interpolated_df['latitude_before'], interpolated_df['longitude_before']
+        )
+        
+        interpolated_df['distance_after_interp'] = haversine_distance(
+            interpolated_df['int_latitude'], interpolated_df['int_longitude'],
+            interpolated_df['latitude_after'], interpolated_df['longitude_after']
+        )
+
+        # Calculate the time differences in hours
+        interpolated_df['time_before_interp'] = (interpolated_df['TimeStamp_before'] - interpolated_df['int_TimeStamp']).dt.total_seconds() / 3600
+        interpolated_df['time_after_interp'] = (interpolated_df['TimeStamp_after'] - interpolated_df['int_TimeStamp']).dt.total_seconds() / 3600
+
+        # Calculate speed over ground (SOG) as distance/time
+        interpolated_df['sog_before_to_interp'] = interpolated_df['distance_before_interp'] / interpolated_df['time_before_interp'].abs()
+        interpolated_df['sog_after_to_interp'] = interpolated_df['distance_after_interp'] / interpolated_df['time_after_interp'].abs()
+
+        # Replace any infinite values (which can occur if time_before_interp or time_after_interp is zero) with NaN
+        interpolated_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        # Check if the calculated SOG exceeds the threshold
+        interpolated_df['exceeds_threshold_before'] = interpolated_df['sog_before_to_interp'] > max_threshold_sog
+        interpolated_df['exceeds_threshold_after'] = interpolated_df['sog_after_to_interp'] > max_threshold_sog
+
+        # Return the DataFrame with additional calculated columns
+        return interpolated_df
+
+
     def der():
         print('Hello AIS Interpolation')
