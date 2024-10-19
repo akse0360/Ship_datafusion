@@ -5,6 +5,10 @@ from sklearn.cluster import DBSCAN
 from scipy.spatial import cKDTree
 from typing import List 
 
+# MLP MATCHING ALGORITHM #
+import torch
+from mlp import MyModel 
+
 class ClusteringMatcher:
     @staticmethod
     def haversine_distance(lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray) -> np.ndarray:
@@ -111,69 +115,7 @@ class ClusteringMatcher:
 
         Returns:
         - A DataFrame containing the matched results.
-        """
-        # Function to apply DBSCAN clustering to two dataframes
-        def apply_dbscan_clustering2(df1: pd.DataFrame, df2: pd.DataFrame, ids : List[str], sources : List[str] ,eps: float, min_samples: int) -> pd.DataFrame:
-            """
-            Applies DBSCAN clustering to two DataFrames based on their spatial coordinates.
-            
-            Parameters:
-            - df1: First DataFrame containing data with columns ['id', 'latitude', 'longitude'].
-            - df2: Second DataFrame containing data with columns ['id', 'latitude', 'longitude'].
-            - eps: Maximum distance between two samples for them to be considered as in the same neighborhood (in kilometers).
-            - min_samples: The number of samples in a neighborhood for a point to be considered a core point.
-
-            Returns:
-            - Combined DataFrame with cluster labels.
-            """
-            df1 = df1.copy()
-            df2 = df2.copy()
-            df1.rename(columns={ids[0]: 'id'}, inplace=True)
-            df2.rename(columns={ids[1]: 'id'}, inplace=True)
-
-            # Ensure the DataFrames contain 'latitude' and 'longitude' columns        
-            if not {'latitude', 'longitude'}.issubset(df1.columns) or not {'latitude', 'longitude'}.issubset(df2.columns):
-                    if {'int_latitude', 'int_longitude'}.issubset(df1.columns):
-                        df1.rename(columns={'int_latitude': 'latitude', 'int_longitude': 'longitude'}, inplace=True)
-                    elif {'int_latitude', 'int_longitude'}.issubset(df2.columns):
-                        df2.rename(columns={'int_latitude': 'latitude', 'int_longitude': 'longitude'}, inplace=True)
-                    else:
-                        raise ValueError("Input DataFrames must contain 'latitude' and 'longitude' columns.")
-
-            # Combine the two DataFrames, adding a source column to differentiate them
-            combined_data = pd.concat([
-                df1[['id', 'latitude', 'longitude']].assign(source=sources[0]),
-                df2[['id', 'latitude', 'longitude']].assign(source=sources[1])
-            ], ignore_index=True)
-
-            # Extract the coordinates for clustering
-            latitudes = combined_data['latitude'].values
-            longitudes = combined_data['longitude'].values
-
-            # Create the Haversine distance matrix between all points
-            distances = np.zeros((len(latitudes), len(latitudes)))
-            for i in range(len(latitudes)):
-                for j in range(len(latitudes)):
-                    distances[i, j] = ClusteringMatcher.haversine_distance(latitudes[i], longitudes[i], latitudes[j], longitudes[j])
-
-            # Convert the distance matrix to radians for DBSCAN with Haversine distance
-            eps_rad = eps 
-
-            # Apply DBSCAN with precomputed distance matrix
-            clustering = DBSCAN(eps=eps_rad, min_samples=min_samples, metric='precomputed')
-            labels = clustering.fit_predict(distances)
-
-            # Assign cluster labels to the combined data
-            combined_data['cluster'] = labels
-            # Number of clusters in labels, ignoring noise if present.
-            n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-            n_noise_ = list(labels).count(-1)
-
-            print("Estimated number of clusters: %d" % n_clusters_)
-            print("Estimated number of noise points: %d" % n_noise_)
-                
-            return combined_data
-        
+        """        
 
         df1 = df1.copy()
         df2 = df2.copy()
@@ -305,22 +247,6 @@ class ClusteringMatcher:
         # Get unique cluster labels
         unique_clusters = combined_df['cluster'].unique()
 
-        ## Combine data from both DataFrames for clustering
-       # combined_df = pd.concat([df1, df2], ignore_index=True)
-
-        # Extract coordinates for clustering
-       # combined_coords = combined_df[['latitude', 'longitude']].to_numpy()
-
-        # Apply DBSCAN clustering
-      #  clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='euclidean').fit(combined_coords)
-      #  combined_df['cluster'] = clustering.labels_
-
-        # Initialize an empty list to store matching results from each cluster
-        #all_matches = []
-
-        # Iterate over each unique cluster, skipping noise points (cluster == -1)
-      #  unique_clusters = combined_df['cluster'].unique()
-
         for cluster in unique_clusters:
             if cluster == -1:
                 continue
@@ -375,3 +301,159 @@ class ClusteringMatcher:
         final_matches = pd.concat(all_matches, ignore_index=True)
 
         return final_matches
+
+    @staticmethod
+    def hungarian(d):
+        """
+        Applies the Hungarian algorithm to the given distance matrix.
+
+        Args:
+            d (torch.Tensor): The distance matrix.
+
+        Returns:
+            torch.Tensor: Indices from the first and second sets that are optimally matched.
+        """
+        d_np = d.cpu().detach().numpy()  # Convert to NumPy array
+        idx1, idx2 = linear_sum_assignment(d_np)  # Apply Hungarian algorithm
+        return torch.tensor(idx1), torch.tensor(idx2)
+    @staticmethod
+    def compute_distance_matrix_with_hungarian(model_path, df1, df2, input_dim=2, hidden_dim=256, output_dim=2, depth=5) -> torch.Tensor:
+        """
+        This function loads a pre-trained model, computes the distance matrix between two pandas DataFrames,
+        and then finds the optimal matching using the Hungarian algorithm.
+
+        Args:
+            model_path (str): Path to the saved model file (e.g., 'model_epoch543.pth').
+            df1 (pd.DataFrame): First DataFrame containing latitude and longitude columns.
+            df2 (pd.DataFrame): Second DataFrame containing latitude and longitude columns.
+            input_dim (int): Dimension of the input features (default: 2 for latitude and longitude).
+            hidden_dim (int): Hidden dimension size of the model (default: 256).
+            output_dim (int): Output dimension size of the model embeddings (default: 2).
+            depth (int): Number of layers in the model (default: 5).
+
+        Returns:
+            (torch.Tensor, torch.Tensor): Indices of the optimal matching from df1 and df2.
+        """
+
+        # Step 1: Load the trained model
+        model = MyModel(input_dim, hidden_dim, output_dim, depth)
+        #model.load_state_dict(torch.load(model_path))
+
+        # Load only the weights of the model (safer and future-proof)
+        state_dict = torch.load(model_path, weights_only=True)
+
+    #    Load the state dict into your model
+        model.load_state_dict(state_dict)
+        model.eval()  # Set the model to evaluation mode
+
+        # Step 2: Prepare the data
+        points1 = torch.tensor(df1[['latitude', 'longitude']].values, dtype=torch.float32)
+        points2 = torch.tensor(df2[['latitude', 'longitude']].values, dtype=torch.float32)
+
+        # Step 3: Run inference
+        with torch.no_grad():  # Disable gradient calculations
+            emb1 = model(points1)
+            emb2 = model(points2)
+
+        # Step 4: Compute the distance (or similarity) matrix
+        distance_matrix = torch.matmul(emb1, emb2.T)
+
+        # Step 5: Apply the Hungarian algorithm to find the optimal matching
+        idx1, idx2 = ClusteringMatcher.hungarian(distance_matrix)
+
+        return idx1, idx2
+    
+    @staticmethod
+    def match_clusters_with_hungarian(df1, df2, ids, sources, eps=7, min_samples=2, model_path = r'C:\Users\abelt\OneDrive\Dokumenter\GitHub\Ship_datafusion\models\model_epoch.pth'):
+        """
+        Matches AIS and SAR data by applying DBSCAN clustering followed by the Hungarian algorithm.
+        
+        Parameters:
+        - df1: DataFrame containing the AIS points.
+        - df2: DataFrame containing the SAR points.
+        - ids: List of unique identifiers for df1 and df2. Example: ['mmsi', 'sar_id'].
+        - sources: List of sources for df1 and df2. Example: ['ais', 'sar'].
+        - eps: The maximum distance between two samples for them to be considered as in the same neighborhood (for DBSCAN).
+        - min_samples: The number of points required to form a cluster (for DBSCAN).
+        - model_path: Path to the model for the Hungarian algorithm (optional).
+        
+        Returns:
+        - matching_df: DataFrame containing matched points between df1 and df2.
+        """
+
+        # Ensure the DataFrames contain 'latitude' and 'longitude' columns        
+        if not {'latitude', 'longitude'}.issubset(df1.columns) or not {'latitude', 'longitude'}.issubset(df2.columns):
+            if {'int_latitude', 'int_longitude'}.issubset(df1.columns):
+                df1.rename(columns={'int_latitude': 'latitude', 'int_longitude': 'longitude'}, inplace=True)
+            elif {'int_latitude', 'int_longitude'}.issubset(df2.columns):
+                df2.rename(columns={'int_latitude': 'latitude', 'int_longitude': 'longitude'}, inplace=True)
+            else:
+                raise ValueError("Input DataFrames must contain 'latitude' and 'longitude' columns.")
+        
+        # Apply DBSCAN clustering (using a placeholder function)
+        clustered_df = ClusteringMatcher.apply_dbscan_clustering(df1, df2, ids=ids, sources=sources, eps=eps, min_samples=min_samples)
+
+        # Get unique cluster labels
+        unique_clusters = clustered_df['cluster'].unique()
+
+        # Initialize a list to store all matches across clusters
+        all_matches = []
+
+        for cluster in unique_clusters:
+            if cluster == -1:
+                # Skip noise points (cluster label -1 in DBSCAN)
+                continue
+
+            # Extract points within the current cluster
+            cluster_data = clustered_df[clustered_df['cluster'] == cluster]
+            cluster_df1 = cluster_data[cluster_data['source'] == sources[0]]  # AIS points
+            cluster_df2 = cluster_data[cluster_data['source'] == sources[1]]  # SAR points
+
+            # Ensure there are both df1 and df2 points in the cluster
+            if len(cluster_df1) > 0 and len(cluster_df2) > 0:
+                # Extract coordinates for df1 and df2 in the current cluster
+                df1_coords = cluster_df1[['latitude', 'longitude']]
+                df2_coords = cluster_df2[['latitude', 'longitude']]
+                
+                # Apply Hungarian algorithm to find optimal matches
+                idx1, idx2 = ClusteringMatcher.compute_distance_matrix_with_hungarian(model_path, df1_coords, df2_coords)
+                
+                # Convert the tensors to numpy arrays or lists for indexing pandas DataFrames
+                ship_indices = idx1.numpy()
+                df2_indices = idx2.numpy()
+
+                # Create matches for the current cluster
+                for ship_idx, df2_idx in zip(ship_indices, df2_indices):
+                    
+                    # Extract match details from df1 and df2
+                    df1_match = cluster_df1.iloc[ship_idx]
+                    df2_match = cluster_df2.iloc[df2_idx]
+
+                    # Extract relevant columns
+                    df1_id = df1_match['id']  # e.g., 'mmsi'
+                    df1_lat = df1_match['latitude']
+                    df1_lon = df1_match['longitude']
+                    df2_id = df2_match['id']  # e.g., 'sar_id'
+                    df2_lat = df2_match['latitude']
+                    df2_lon = df2_match['longitude']
+                    
+                    # You can also add distance or other matching criteria if you have them
+                    # distance_km = cost_matrix[ship_idx, df2_idx]
+
+                    # Create a match record as a dictionary
+                    match = {
+                        ids[0]: df1_id,  # e.g., 'mmsi'
+                        'df1_lat': df1_lat,
+                        'df1_lon': df1_lon,
+                        ids[1]: df2_id,  # e.g., 'sar_id'
+                        'df2_lat': df2_lat,
+                        'df2_lon': df2_lon,
+                        # Uncomment this if you calculate distance
+                        # 'distance_km': distance_km
+                    }
+
+                    # Append the match to the list of all matches
+                    all_matches.append(match)
+
+        # Convert the list of matches into a DataFrame
+        return pd.DataFrame(all_matches)
