@@ -4,7 +4,7 @@ import numpy as np
 
 # Matched data Filters class
 class MatchedFilters:
-    
+    # Filter for distance threshold, after matching
     @staticmethod
     def filter_by_distance(dict_dfs : dict, distance_threshold : float =15, printer : bool = False) -> dict:
         """
@@ -22,11 +22,12 @@ class MatchedFilters:
         thresholded_dict = {}
         
         for key, df in dict_dfs.items():
+            dfpro = df.copy()
             if 'distance_km' in df.columns:
                 
-                thresholded_dict[key] = df[df['distance_km'] <= distance_threshold]
+                thresholded_dict[key] = dfpro[dfpro['distance_km'] <= distance_threshold]
                 if printer:
-                    print(f'Number of matches {key} : {len(df)}')
+                    print(f'Number of matches {key} : {len(dfpro)}')
                     print(f'Number of matches between {key} within {distance_threshold} km: {len(thresholded_dict[key])}')
             else:
                 print(f'Warning: DataFrame for {key} does not have a "distance_km" column.')

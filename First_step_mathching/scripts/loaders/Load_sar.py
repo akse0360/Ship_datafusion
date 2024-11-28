@@ -1,15 +1,12 @@
-import pandas as pd
 import os
+import numpy as np
+import pandas as pd
 import geopandas as gpd
+from shapely.geometry import box
 from roaring_landmask import RoaringLandmask
 
 from scripts.functions import functions as func
 
-import os
-import pandas as pd
-import geopandas as gpd
-from shapely.geometry import box
-import numpy as np
 
 class Load_sar:
     """

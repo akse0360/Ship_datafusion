@@ -3,7 +3,13 @@
 /First_step_mathching/images
 /First_step_mathching/shpfile
 /GDAL
-First_step_mathching/mlp2.py
-models/model_epoch1.pth
-models/model_epoch.pth
-models/checkpoint.pth
+/models
+requirements.txt
+/Previous_work
+/data
+/First_step_mathching/frames
+/playground/results
+/playground/scripts/__pycache__
+/playground/__pycache__
+/First_step_mathching/scripts/plots/__pycache__
+/First_step_mathching/scripts/__pycache__

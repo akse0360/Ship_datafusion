@@ -6,6 +6,11 @@ from itertools import combinations
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# VENN DIAGRAMS FUNCTIONS#
+from matplotlib_venn import venn2, venn3
+import matplotlib.pyplot as plt
+
+
 class DifferenceVisualizer:
     """
     A class for visualizing data with latitude-longitude scatter plots and distance histograms.
@@ -25,13 +30,13 @@ class DifferenceVisualizer:
         return np.sqrt(np.mean(df[distance_col] ** 2))
 
     @staticmethod
-    def plot_lat_lon_differences(df, loc_1, loc_2, name):
+    def plot_lat_lon_differences(dfs, loc_1, loc_2, name):
         """
         Plots the differences in latitude and longitude between two sets of coordinates using Seaborn,
         with KDE contours and a colorbar for the KDE.
 
         Parameters:
-            df (pd.DataFrame): DataFrame containing the data.
+            dfs (pd.DataFrame): DataFrame containing the data.
             loc_1 (list): List of two column names for the first set of lat and lon. Format: [latitude, longitude].
             loc_2 (list): List of two column names for the second set of lat and lon. Format: [latitude, longitude].
             name (str): Name to be used in the title of the plot.
@@ -39,10 +44,10 @@ class DifferenceVisualizer:
         Returns:
             None: Displays the scatter plot with KDE contours and colorbar.
         """
-        
+        df = dfs.copy()
         # Calculate the differences between the two sets of coordinates using .loc
-        df.loc[:, 'lat_diff'] = df.loc[:, loc_1[0]] - df.loc[:, loc_2[0]]
-        df.loc[:, 'lon_diff'] = df.loc[:, loc_1[1]] - df.loc[:, loc_2[1]]
+        df['lat_diff'] = df[loc_1[0]] - df[loc_2[0]]
+        df['lon_diff'] = df[loc_1[1]] - df[loc_2[1]]
         # Set up the figure
         plt.figure(figsize=(10, 6))
 
@@ -67,7 +72,6 @@ class DifferenceVisualizer:
         plt.title(f'Scatter Plot of Latitude and Longitude Differences, Match: {name} ({len(df)} matches)')
         plt.grid(True)
         plt.show()
-
     
     @staticmethod
     def plot_distance_histogram_with_pdf(df, distance_col, name, bins=None):
@@ -139,3 +143,173 @@ class DifferenceVisualizer:
             print(f"Number of common ID pairs: {len(in_both)}")
             print(f"Number of ID pairs only in '{df_name1}': {len(only_in_df1)}")
             print(f"Number of ID pairs only in '{df_name2}': {len(only_in_df2)}")
+
+    @staticmethod
+    def match_venn2(df1, df2, id_column, df1_label='DF1', df2_label='DF2', model='MISSING'):
+        """
+        Matches two dataframes based on a specific id column and outputs a Venn diagram.
+        
+        Parameters:
+        - df1: First dataframe
+        - df2: Second dataframe
+        - id_column: The name of the ID column to match on
+        - df1_label: Label for the first dataframe in the Venn diagram
+        - df2_label: Label for the second dataframe in the Venn diagram
+        
+        Returns:
+        A Venn diagram showing the overlap of the two dataframes based on the id_column.
+        """
+        # Convert ID columns to sets for comparison
+        set1 = set(df1[id_column])
+        set2 = set(df2[id_column])
+        
+        # Create the Venn diagram
+        plt.figure(figsize=(8, 8))
+        venn2([set1, set2], set_labels=(df1_label, df2_label))
+        
+        # Show plot
+        plt.title(f'Venn Diagram of {df1_label} and {df2_label} by {id_column} using {model.upper()}')
+        plt.show()
+
+    @staticmethod
+    def match_venn3_matching(dfs: list[pd.DataFrame], model: str, id_columns: list[str], labels: list[str]):
+        """
+        Generalized function to create a Venn diagram from multiple dataframes based on specified ID columns.
+        
+        Parameters:
+        - dfs: List of dataframes (assumed to be AIS-SAR, AIS-NORSAT, SAR-NORSAT in that order).
+        - model: The key to access the relevant part of each dataframe (e.g., 'cham').
+        - id_columns: List containing the IDs to use for merging (in the same order as the dataframes).
+        Example: ['mmsi', 'sar_id', 'norsat_id']
+        - labels: Labels for the datasets in the Venn diagram (e.g., ['AIS-SAR', 'AIS-NORSAT', 'SAR-NORSAT']).
+        
+        Returns:
+        - Venn diagram showing the overlaps between the datasets based on the specified columns.
+        """
+        
+        # Extract dataframes based on model
+        ais_sar = dfs[0][model].copy()  # First dataframe (AIS-SAR)
+        ais_norsat = dfs[1][model].copy()  # Second dataframe (AIS-NORSAT)
+        sar_norsat = dfs[2][model].copy()  # Third dataframe (SAR-NORSAT)
+
+        # Merge AIS-SAR with SAR-NORSAT based on the second ID (sar_id)
+        ais_sar_sar_norsat_merge = ais_sar.merge(sar_norsat, on=[id_columns[1]])
+        ais_sar_sar_norsat_count = len(ais_sar_sar_norsat_merge)
+
+        # Merge AIS-SAR-SAR-NORSAT with AIS-NORSAT based on the first (mmsi) and third IDs (norsat_id)
+        full_match_merge = ais_sar_sar_norsat_merge.merge(ais_norsat, on=[id_columns[0], id_columns[2]])
+        full_match_count = len(full_match_merge)
+
+        # Merge AIS-NORSAT with SAR-NORSAT based on the third ID (norsat_id)
+        ais_norsat_sar_norsat_merge = ais_norsat.merge(sar_norsat, on=[id_columns[2]])
+        ais_norsat_sar_norsat_count = len(ais_norsat_sar_norsat_merge)
+
+        # Find unique counts for each set
+        ais_count = len(ais_sar)  # AIS-SAR matches
+        norsat_count = len(ais_norsat)  # AIS-NORSAT matches
+        sar_count = len(sar_norsat)  # SAR-NORSAT matches
+
+        # Calculate overlaps
+        only_ais = ais_count - ais_sar_sar_norsat_count  # AIS-SAR only
+        only_norsat = norsat_count - ais_norsat_sar_norsat_count  # AIS-NORSAT only
+        only_sar = sar_count - ais_sar_sar_norsat_count  # SAR-NORSAT only
+        ais_norsat_overlap = ais_norsat_sar_norsat_count - full_match_count  # AIS-NORSAT overlap
+        ais_sar_overlap = ais_sar_sar_norsat_count - full_match_count  # AIS-SAR overlap
+        sar_norsat_overlap = ais_norsat_sar_norsat_count - full_match_count  # SAR-NORSAT overlap
+        full_overlap = full_match_count  # Full overlap (all three)
+
+        # Create the Venn diagram
+        plt.figure(figsize=(8, 8))
+        venn3(subsets=(only_ais, only_norsat, ais_norsat_overlap,
+                    only_sar, ais_sar_overlap, sar_norsat_overlap, full_overlap),
+            set_labels=(labels[0], labels[1], labels[2]))
+
+        # Show the Venn diagram
+        plt.title(f'Venn Diagram of {labels[0]}, {labels[1]}, and {labels[2]} matches using {model.upper()}')
+        plt.show()
+
+    @staticmethod
+    def match_venn3(outerLayer, dfs, model, id_columns, labels):
+        """
+        Creates a Venn diagram for AIS, SAR, and NORSAT data, showing intersections for pairwise and triple matches,
+        ensuring that all circles are the same size while displaying the correct numbers.
+        
+        Parameters:
+        - outerLayer (dict): Contains 'ais', 'sar', 'norsat' keys with 'df' and 'length' values.
+        - dfs (list): List of DataFrames containing pairwise matches [AIS-SAR, AIS-NORSAT, SAR-NORSAT].
+        - model (str): Column name representing the model in dfs.
+        - id_columns (list): Column names to use for merging; expected as [mmsi_id, sar_id, norsat_id].
+        - labels (list): List of names to display in the Venn diagram, e.g., ['AIS', 'SAR', 'NORSAT'].
+        """
+        # Calculate innerlayer from dfs and model
+        innerlayer = {
+            'ais_sar': {'df': dfs[0][model], 'length': len(dfs[0][model])},
+            'ais_norsat': {'df': dfs[1][model], 'length': len(dfs[1][model])},
+            'sar_norsat': {'df': dfs[2][model], 'length': len(dfs[2][model])}
+        }
+        
+        # Extract dataframes for intersections
+        ais_sar = innerlayer['ais_sar']['df']
+        sar_norsat = innerlayer['sar_norsat']['df']
+        ais_norsat = innerlayer['ais_norsat']['df']
+        
+        # Step 1: Merge AIS-SAR with SAR-NORSAT on SAR ID
+        ais_sar_sar_norsat_merge = ais_sar.merge(sar_norsat, on=[id_columns[1]])
+        ais_sar_sar_norsat_count = len(ais_sar_sar_norsat_merge)
+        
+        # Step 2: Merge AIS-SAR-SAR-NORSAT with AIS-NORSAT on MMSI and NORSAT IDs for triple matches
+        full_match_merge = ais_sar_sar_norsat_merge.merge(ais_norsat, on=[id_columns[0], id_columns[2]])
+        full_overlap = len(full_match_merge)  # Full overlap (all three)
+        
+        # Calculate counts for each area of the Venn diagram
+        ais_count = outerLayer['ais']['length']
+        sar_count = outerLayer['sar']['length']
+        norsat_count = outerLayer['norsat']['length']
+        ais_norsat_sar_norsat_count = len(ais_norsat)  # All AIS-NORSAT pairs
+
+        # Calculate overlaps
+        only_ais = ais_count - ais_sar_sar_norsat_count  # AIS only
+        only_sar = sar_count - ais_sar_sar_norsat_count  # SAR only
+        only_norsat = norsat_count - ais_norsat_sar_norsat_count  # NORSAT only
+
+        ais_norsat_overlap = ais_norsat_sar_norsat_count - full_overlap  # AIS-NORSAT overlap
+        ais_sar_overlap = ais_sar_sar_norsat_count - full_overlap        # AIS-SAR overlap
+        sar_norsat_overlap = ais_norsat_sar_norsat_count - full_overlap  # SAR-NORSAT overlap
+
+        # Set all non-overlap areas to an equal size for equal-sized circles
+        equal_size = 200
+
+        # Create the Venn diagram with equal-sized circles
+        plt.figure(figsize=(8, 8))
+        venn = venn3(
+            subsets=(equal_size, equal_size, ais_sar_overlap,
+                    equal_size, ais_norsat_overlap, sar_norsat_overlap, full_overlap),
+            set_labels=(labels[0], labels[1], labels[2])
+        )
+        font_size = 12
+        # Manually set labels to reflect actual counts
+        venn.get_label_by_id('100').set_text(only_ais)
+        venn.get_label_by_id('100').set_fontsize(font_size)
+
+        venn.get_label_by_id('010').set_text(only_sar)
+        venn.get_label_by_id('010').set_fontsize(font_size)
+
+        venn.get_label_by_id('110').set_text(ais_sar_overlap)
+        venn.get_label_by_id('110').set_fontsize(font_size)
+
+        venn.get_label_by_id('001').set_text(only_norsat)
+        venn.get_label_by_id('001').set_fontsize(font_size)
+
+        venn.get_label_by_id('101').set_text(ais_norsat_overlap)
+        venn.get_label_by_id('101').set_fontsize(font_size)
+
+        venn.get_label_by_id('011').set_text(sar_norsat_overlap)
+        venn.get_label_by_id('011').set_fontsize(font_size)
+
+        venn.get_label_by_id('111').set_text(full_overlap)
+        venn.get_label_by_id('111').set_fontsize(font_size)
+        # Set title
+        plt.title(f'Venn Diagram of {labels[0]}, {labels[1]}, and {labels[2]} matches using {model.upper()}')
+
+        # Show the plot
+        plt.show()

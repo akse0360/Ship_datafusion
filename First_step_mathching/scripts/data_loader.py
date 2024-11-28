@@ -17,7 +17,7 @@ class DataLoader:
         load_data: Load and process AIS, SAR, and Norsat data.
     """
 
-    def __init__(self, base_path: str = None, ais_files: dict = None, sar_files: dict = None, norsat_files: dict = None, date_key: str = None):
+    def __init__(self, base_path: str = None, ais_files: dict = None, sar_files: dict = None, norsat_files: dict = None):
         """
         Loads and processes AIS, SAR, and Norsat data based on the specified files, matching AIS data
         with SAR and Norsat using temporal and spatial parameters. This function returns the corresponding
@@ -36,7 +36,6 @@ class DataLoader:
         self.ais_files = ais_files
         self.sar_files = sar_files
         self.norsat_files = norsat_files
-        self.date_key = date_key
                 
     def load_data(self):
         """
