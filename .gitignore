@@ -13,3 +13,11 @@ requirements.txt
 /playground/__pycache__
 /First_step_mathching/scripts/plots/__pycache__
 /First_step_mathching/scripts/__pycache__
+/AISPlayground/__pycache__
+/AISPlayground/model/__pycache__
+/AISPlayground/results
+/AISPlayground/scripts/__pycache__
+AISPlayground/point2_matches.csv
+AISPlayground/point1_matches.csv
+AISPlayground/preprocessed_data/landmask.csv
+AISPlayground/preprocessed_data/landmask_results.csv

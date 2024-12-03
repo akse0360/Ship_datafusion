@@ -77,6 +77,7 @@ class Generator:
         valid_ground_truth_masked = np.where(ground_truth_masked != -1, ground_truth_masked, -1)
 
         return p2_masked, valid_ground_truth_masked
+    
 
     def evaluate_rankN(dist_matrix, n=5):
         """
